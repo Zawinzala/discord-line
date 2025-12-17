@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Broken Arrow Tactical Map V16 (Silky Smooth)</title>
+    <title>Broken Arrow Tactical Map V17 (Wide Universe)</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
@@ -47,6 +47,7 @@
             background: linear-gradient(90deg, #fff, #444); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         }
 
+        /* UI Components */
         #toggleBtn {
             position: absolute; left: 20px; top: 20px; width: 32px; height: 32px;
             background: rgba(0,0,0,0.8); border: 1px solid var(--secondary);
@@ -162,7 +163,7 @@
     <div style="text-align:center; font-size:10px; color:#333; cursor:pointer" onclick="clearLang()">SWITCH LANGUAGE</div>
 </div>
 
-<div id="loading">INITIALIZING ENGINE...</div>
+<div id="loading">EXPANDING UNIVERSE...</div>
 <canvas id="graph-canvas"></canvas>
 
 <script>
@@ -192,6 +193,7 @@
     let hoveredNode = null;
     let selectedNode = null;
     let pathNodes = new Set(), pathLinks = new Set();
+    let topRankNodes = new Set(); // 缓存Top 5
     let isDragging = false; 
 
     window.addEventListener('load', () => {
@@ -340,30 +342,31 @@
             if(adjacencyList.has(t)) adjacencyList.get(t).push(s);
         });
 
+        // 仅保留 Top 5
+        topRankNodes = new Set(nodes.sort((a,b)=>b.degree-a.degree).slice(0, 5).map(n => n.id));
+
         initSimulation(nodes, links);
     }
 
-    // --- Physics Engine V16 (Silky Smooth) ---
+    // --- Physics Engine V17 (Wide Universe) ---
     function initSimulation(nodes, links) {
         if(simulation) simulation.stop();
 
         simulation = d3.forceSimulation(nodes)
-            // 连线力
-            .force("link", d3.forceLink(links).id(d=>d.id).distance(d => d.isPlanet ? 250 : 100))
-            // 斥力
-            .force("charge", d3.forceManyBody().strength(d => d.isPlanet ? -2000 : -300).theta(0.9)) 
-            // 软碰撞: strength 0.5 (不生硬), 迭代 2 次
-            .force("collide", d3.forceCollide().radius(d => getRadius(d) * 2.2).strength(0.5).iterations(2))
-            // 向心力
-            .force("center", d3.forceCenter(width/2, height/2).strength(0.01))
-            // 核心: 高阻尼 (0.9) + 低目标能量 (0.01) = 丝滑不抖动且不暂停
+            // 连线力: 极大增加距离，让星图铺开
+            .force("link", d3.forceLink(links).id(d=>d.id).distance(d => d.isPlanet ? 400 : 150))
+            // 斥力: 降低了星球斥力 (-8000 -> -3000)
+            .force("charge", d3.forceManyBody().strength(d => d.isPlanet ? -3000 : -800).theta(0.9)) 
+            // 碰撞: 半径增大
+            .force("collide", d3.forceCollide().radius(d => getRadius(d) * 3).strength(0.5).iterations(2))
+            // 向心力: 极弱 (0.005)，允许漫游
+            .force("center", d3.forceCenter(width/2, height/2).strength(0.005))
             .velocityDecay(0.9) 
-            .alphaTarget(0.01)  // 保持微弱动力
-            .alphaDecay(0.02)   // 快速进入稳定态
+            .alphaTarget(0.01)
+            .alphaDecay(0.02)
             .on("tick", render);
 
-        // Pre-warm
-        for (let i = 0; i < 100; ++i) simulation.tick();
+        for (let i = 0; i < 150; ++i) simulation.tick();
 
         const dragBehavior = d3.drag()
             .subject((event) => {
@@ -371,7 +374,6 @@
                 return simulation.find(x, y, 40 / transform.k);
             })
             .on("start", (event) => {
-                // 拖拽时稍微增加一点能量
                 if (!event.active) simulation.alphaTarget(0.1).restart();
                 const [x, y] = transform.invert(d3.pointer(event, canvas));
                 event.subject.fx = x;
@@ -384,7 +386,6 @@
                 event.subject.fy = y;
             })
             .on("end", (event) => {
-                // 结束后回到低能量巡航
                 if (!event.active) simulation.alphaTarget(0.01);
                 event.subject.fx = null;
                 event.subject.fy = null;
@@ -394,7 +395,7 @@
         d3.select(canvas)
             .call(dragBehavior)
             .call(d3.zoom()
-                .scaleExtent([0.1, 8])
+                .scaleExtent([0.05, 8]) // 允许缩得更小看全局
                 .on("zoom", (e) => { transform = e.transform; render(); })
             )
             .on("dblclick.zoom", null)
@@ -507,10 +508,12 @@
             }
         });
 
-        // 3. Draw Labels
+        // 3. Draw Labels (Top 5 Only by default)
         context.globalAlpha = 1;
         context.textAlign = "center";
-        const fontSize = Math.max(10, 12 / zoomLevel);
+        
+        // 字体修改：调大基础字号和缩放比 (从 10, 12 改为 14, 24)
+        const fontSize = Math.max(14, 24 / zoomLevel);
         context.font = `bold ${fontSize}px Rajdhani`;
 
         currentNodes.forEach(d => {
@@ -524,7 +527,8 @@
                 if (d === focusNode) { show = true; color = "#00f3ff"; glow = true; }
                 else if (adjacencyList.get(focusNode.id).includes(d.id)) { show = true; color = "#fff"; }
             } else {
-                if (d.degree > 20) { show = true; color = "#00f3ff"; glow = true; } 
+                // Default: Only Top 5
+                if (topRankNodes.has(d.id)) { show = true; color = "#00f3ff"; glow = true; } 
             }
 
             if (show) {
@@ -593,7 +597,7 @@
             const cy = d3.mean(nodesArr, d => d.y);
             svg.transition().duration(1200).call(d3.zoom().transform, d3.zoomIdentity.translate(width/2, height/2).scale(0.6).translate(-cx, -cy));
         } else { msg.innerText = TRANSLATIONS[curLang].pathFail; }
-        render(); // Force update
+        render();
     };
 
     document.getElementById('searchBtn').onclick = () => {
