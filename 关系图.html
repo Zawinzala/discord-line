@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Broken Arrow Tactical Map V16 (Silky Smooth)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #020204;
+            --panel-bg: rgba(8, 10, 14, 0.95);
+            --text-main: #8a9bb8;
+            --accent: #00f3ff;
+            --gold: #ffd700;
+            --path-color: #ffaa00;
+            --secondary: #2a3b55;
+            --font-stack: 'Rajdhani', sans-serif;
+        }
+
+        body {
+            margin: 0; background-color: var(--bg-color);
+            color: var(--text-main); font-family: var(--font-stack);
+            overflow: hidden; width: 100vw; height: 100vh;
+        }
+
+        canvas { display: block; width: 100vw; height: 100vh; cursor: grab; }
+        canvas:active { cursor: grabbing; }
+
+        #controls {
+            position: absolute; top: 20px; left: 20px; width: 280px;
+            padding: 15px 20px; background: var(--panel-bg);
+            border-left: 2px solid var(--secondary);
+            backdrop-filter: blur(12px); z-index: 100; 
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            max-height: 95vh; overflow-y: auto;
+            box-shadow: 0 0 30px rgba(0,0,0,0.8);
+        }
+        #controls.collapsed { transform: translateX(-350px); }
+        #controls::-webkit-scrollbar { width: 0; }
+
+        h1 {
+            margin: 0; font-size: 22px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 3px; color: #fff;
+            background: linear-gradient(90deg, #fff, #444); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+        }
+
+        #toggleBtn {
+            position: absolute; left: 20px; top: 20px; width: 32px; height: 32px;
+            background: rgba(0,0,0,0.8); border: 1px solid var(--secondary);
+            color: var(--accent); z-index: 101; cursor: pointer; font-size: 20px;
+            display: none; align-items: center; justify-content: center;
+        }
+        .section { margin-bottom: 20px; }
+        label { display: block; font-size: 10px; color: var(--accent); margin-bottom: 6px; letter-spacing: 2px; font-weight: bold; opacity: 0.8; }
+        input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; height: 2px; background: #333; }
+        input[type="text"] { 
+            width: 100%; padding: 6px 10px; background: rgba(0,0,0,0.3); 
+            border: 1px solid #333; color: #fff; font-family: var(--font-stack);
+            font-size: 14px; letter-spacing: 1px; margin-bottom: 5px; box-sizing: border-box;
+        }
+        input[type="text"]:focus { border-color: var(--accent); outline: none; background: rgba(0, 243, 255, 0.05); }
+        button.action-btn {
+            background: linear-gradient(45deg, rgba(0,0,0,0), rgba(0, 243, 255, 0.1));
+            border: 1px solid var(--secondary); color: var(--accent); padding: 6px 0; 
+            font-family: var(--font-stack); font-weight: 700; cursor: pointer; 
+            width: 100%; letter-spacing: 2px; transition: all 0.2s;
+        }
+        button.action-btn:hover { background: var(--accent); color: #000; box-shadow: 0 0 15px var(--accent); }
+        
+        #langModal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 9999; display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+        }
+        .lang-opt {
+            border: 1px solid #222; color: #666; padding: 15px 50px; margin: 10px;
+            font-size: 16px; background: transparent; cursor: pointer; width: 260px;
+            font-family: var(--font-stack); text-transform: uppercase; letter-spacing: 2px; transition: 0.3s;
+        }
+        .lang-opt:hover { border-color: var(--accent); color: var(--accent); background: rgba(0,243,255,0.05); }
+
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: var(--accent); font-family: var(--font-stack); font-size: 16px;
+            letter-spacing: 3px; animation: pulse 1.5s infinite; pointer-events: none;
+            background: rgba(0,0,0,0.8); padding: 20px; border: 1px solid var(--secondary);
+            z-index: 200;
+        }
+        @keyframes pulse { 0% { opacity: 0.5; } 100% { opacity: 1; } }
+        
+        .mode-switch { display: flex; margin-bottom: 10px; border-bottom: 1px solid #333; }
+        .mode-tab { flex: 1; text-align: center; padding: 8px 0; font-size: 11px; cursor: pointer; color: #555; border-bottom: 2px solid transparent; }
+        .mode-tab.active { color: #fff; border-bottom-color: var(--accent); }
+        .mode-content { display: none; }
+        .mode-content.active { display: block; }
+        
+        .upload-link { font-size: 11px; text-decoration: underline; cursor: pointer; color: #445566; text-align: right; margin-bottom: 10px; }
+        .upload-link:hover { color: var(--accent); }
+
+        #pathBtn { border-color: var(--path-color); color: var(--path-color); }
+        #pathBtn:hover { background: var(--path-color); color: #000; }
+    </style>
+</head>
+<body>
+
+<div id="langModal">
+    <div style="color:#fff; font-size:24px; margin-bottom:30px; letter-spacing:4px;">SYSTEM ACCESS</div>
+    <button class="lang-opt" onclick="setLang('en')">ENGLISH</button>
+    <button class="lang-opt" onclick="setLang('zh')">简体中文</button>
+    <button class="lang-opt" onclick="setLang('ru')">Русский</button>
+</div>
+
+<button id="toggleBtn">≡</button>
+
+<div id="controls">
+    <div style="position:absolute; top:10px; right:15px; cursor:pointer; font-size:18px; color:#555;" onclick="togglePanel(true)">×</div>
+    <h1 id="ui-title">TACTICAL MAP</h1>
+    <div id="date-range" style="font-family:monospace; font-size:11px; color:#556677; margin-bottom:15px; border-bottom:1px solid #222; padding-bottom:10px;"></div>
+    
+    <div class="upload-link" id="reuploadLink" onclick="triggerUpload()">[ LOAD NEW LOG ]</div>
+    <div class="section" id="uploadSection" style="display:none">
+        <label id="lbl-source">SOURCE</label>
+        <button class="action-btn" onclick="document.getElementById('fileInput').click()" id="btn-upload">📂 UPLOAD .TXT</button>
+        <input type="file" id="fileInput" accept=".txt" style="display:none">
+    </div>
+
+    <div class="mode-switch">
+        <div class="mode-tab active" id="tab-search" onclick="switchTab('search')">LOCATE</div>
+        <div class="mode-tab" id="tab-path" onclick="switchTab('path')">TRACE PATH</div>
+    </div>
+
+    <div id="panel-search" class="mode-content active section">
+        <input type="text" id="searchInput" placeholder="User ID...">
+        <button class="action-btn" id="searchBtn">SCAN SECTOR</button>
+        <div id="searchMsg" style="font-size:11px; color:var(--path-color); margin-top:5px; min-height:15px;"></div>
+    </div>
+
+    <div id="panel-path" class="mode-content section">
+        <input type="text" id="pathStart" placeholder="Source User A" style="margin-bottom:5px">
+        <input type="text" id="pathEnd" placeholder="Target User B">
+        <button class="action-btn" id="pathBtn" style="margin-top:5px">TRACE CONNECTION</button>
+        <div id="pathMsg" style="font-size:11px; color:var(--path-color); margin-top:5px; min-height:15px;"></div>
+    </div>
+
+    <div class="section">
+        <label id="lbl-filter">FILTER (LINKS ≥ <span id="thresholdVal" style="color:#fff">3</span>)</label>
+        <input type="range" id="linkThreshold" min="1" max="50" value="3" step="1">
+    </div>
+
+    <div class="section" style="border-top: 1px solid #222; padding-top:10px;">
+        <div style="display:flex; justify-content:space-between; font-size:12px;">
+            <span id="lbl-nodes">NODES:</span><span style="color:#fff" id="nodeCount">0</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:12px;">
+            <span id="lbl-links">LINKS:</span><span style="color:#fff" id="linkCount">0</span>
+        </div>
+    </div>
+    
+    <div style="text-align:center; font-size:10px; color:#333; cursor:pointer" onclick="clearLang()">SWITCH LANGUAGE</div>
+</div>
+
+<div id="loading">INITIALIZING ENGINE...</div>
+<canvas id="graph-canvas"></canvas>
+
+<script>
+    const TRANSLATIONS = {
+        en: { title: "BROKEN ARROW<br>TACTICAL MAP", btnUp: "UPLOAD .TXT", tabSearch: "LOCATE", tabPath: "TRACE PATH", searchPlace: "User ID...", searchBtn: "SCAN SECTOR", pathStart: "Source User A", pathEnd: "Target User B", pathBtn: "TRACE CONNECTION", filter: "FILTER (LINKS ≥ $)", nodes: "UNITS:", links: "LINKS:", load: "PROCESSING...", notFound: "NOT FOUND", pathFound: "PATH FOUND: $ HOPS", pathFail: "NO CONNECTION" },
+        zh: { title: "Broken Arrow<br>战术指挥网络", btnUp: "上传日志 .TXT", tabSearch: "定位单位", tabPath: "链路追踪", searchPlace: "输入用户ID...", searchBtn: "扫描扇区", pathStart: "起点用户 A", pathEnd: "终点用户 B", pathBtn: "分析连接路径", filter: "信号过滤 (≥ $)", nodes: "活跃单位:", links: "连接数:", load: "数据解析中...", notFound: "未发现目标", pathFound: "发现路径: 跨越 $ 层", pathFail: "未发现连接路径" },
+        ru: { title: "СЕТЬ<br>BROKEN ARROW", btnUp: "ЗАГРУЗИТЬ .TXT", tabSearch: "ПОИСК", tabPath: "ПУТЬ", searchPlace: "ID пользователя...", searchBtn: "СКАНИРОВАТЬ", pathStart: "Пользователь А", pathEnd: "Пользователь Б", pathBtn: "ОТСЛЕДИТЬ", filter: "ФИЛЬТР (≥ $)", nodes: "ЮНИТЫ:", links: "СВЯЗИ:", load: "ОБРАБОТКА...", notFound: "НЕ НАЙДЕНО", pathFound: "ПУТЬ НАЙДЕН: $ ШАГОВ", pathFail: "СВЯЗЬ НЕ НАЙДЕНА" }
+    };
+
+    const PALETTES = ["#4fc3f7", "#ffb74d", "#ba68c8", "#81c784", "#fff176", "#f06292", "#cfd8dc"];
+    function getColor(id) {
+        let hash = 0;
+        for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
+        return PALETTES[Math.abs(hash) % PALETTES.length];
+    }
+    
+    function getRadius(node) {
+        return node.isPlanet ? (Math.pow(node.degree, 0.6) * 6 + 10) : 3;
+    }
+
+    let curLang = 'zh';
+    const DEFAULT_DATA_URL = 'data/chat.txt';
+    let rawMessages = [], currentNodes = [], currentLinks = [], adjacencyList = new Map();
+    let simulation, transform = d3.zoomIdentity;
+    let canvas, context, width, height;
+    
+    let hoveredNode = null;
+    let selectedNode = null;
+    let pathNodes = new Set(), pathLinks = new Set();
+    let isDragging = false; 
+
+    window.addEventListener('load', () => {
+        canvas = d3.select("canvas").node();
+        context = canvas.getContext("2d");
+        resize();
+        window.addEventListener('resize', resize);
+        
+        const stored = localStorage.getItem('ba_map_lang');
+        if (stored && TRANSLATIONS[stored]) {
+            document.getElementById('langModal').style.display = 'none';
+            setLang(stored, true);
+        }
+    });
+
+    function resize() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        canvas.width = width;
+        canvas.height = height;
+        if(simulation) render();
+    }
+
+    function setLang(lang, skipSave=false) {
+        curLang = lang;
+        if(!skipSave) localStorage.setItem('ba_map_lang', lang);
+        const t = TRANSLATIONS[lang];
+        document.getElementById('ui-title').innerHTML = t.title;
+        document.getElementById('btn-upload').innerText = t.btnUp;
+        document.getElementById('tab-search').innerText = t.tabSearch;
+        document.getElementById('tab-path').innerText = t.tabPath;
+        document.getElementById('searchInput').placeholder = t.searchPlace;
+        document.getElementById('searchBtn').innerText = t.searchBtn;
+        document.getElementById('pathStart').placeholder = t.pathStart;
+        document.getElementById('pathEnd').placeholder = t.pathEnd;
+        document.getElementById('pathBtn').innerText = t.pathBtn;
+        document.getElementById('lbl-nodes').innerText = t.nodes;
+        document.getElementById('lbl-links').innerText = t.links;
+        updateFilterLabel();
+        document.getElementById('langModal').style.display = 'none';
+        if(rawMessages.length === 0) loadDefaultData();
+    }
+    
+    function clearLang() { localStorage.removeItem('ba_map_lang'); location.reload(); }
+    function updateFilterLabel() {
+        const val = document.getElementById('linkThreshold').value;
+        document.getElementById('lbl-filter').innerHTML = TRANSLATIONS[curLang].filter.replace('$', `<span style="color:#fff">${val}</span>`);
+    }
+    function togglePanel(hide) {
+        const p = document.getElementById('controls'), b = document.getElementById('toggleBtn');
+        if(hide) { p.classList.add('collapsed'); setTimeout(()=>b.style.display='flex',300); }
+        else { p.classList.remove('collapsed'); b.style.display='none'; }
+    }
+    document.getElementById('toggleBtn').onclick = () => togglePanel(false);
+    
+    function switchTab(mode) {
+        document.querySelectorAll('.mode-tab').forEach(e => e.classList.remove('active'));
+        document.querySelectorAll('.mode-content').forEach(e => e.classList.remove('active'));
+        document.getElementById(`tab-${mode}`).classList.add('active');
+        document.getElementById(`panel-${mode}`).classList.add('active');
+        pathNodes.clear(); pathLinks.clear(); selectedNode = null; hoveredNode = null;
+        render();
+    }
+    
+    function triggerUpload() {
+        document.getElementById('uploadSection').style.display = 'block';
+        document.getElementById('reuploadLink').style.display = 'none';
+        document.getElementById('fileInput').click();
+    }
+
+    async function loadDefaultData() {
+        try {
+            const res = await fetch(DEFAULT_DATA_URL);
+            if(!res.ok) throw new Error();
+            const text = await res.text();
+            document.getElementById('uploadSection').style.display = 'none';
+            document.getElementById('reuploadLink').style.display = 'block';
+            processText(text);
+        } catch(e) {
+            document.getElementById('loading').innerText = "NO DATA FILE";
+            document.getElementById('uploadSection').style.display = 'block';
+            document.getElementById('reuploadLink').style.display = 'none';
+        }
+    }
+
+    document.getElementById('fileInput').addEventListener('change', (e) => {
+        if(!e.target.files[0]) return;
+        document.getElementById('loading').style.display = 'block';
+        const reader = new FileReader();
+        reader.onload = (e) => processText(e.target.result);
+        reader.readAsText(e.target.files[0]);
+    });
+
+    document.getElementById('linkThreshold').addEventListener('change', (e) => {
+        if(rawMessages.length) analyzeAndDraw(parseInt(e.target.value));
+    });
+    document.getElementById('linkThreshold').addEventListener('input', updateFilterLabel);
+
+    function processText(text) {
+        const regex = /^\[(\d{4}\/\d{1,2}\/\d{1,2}\s\d{1,2}:\d{2})\]\s+(.+)$/gm;
+        let match, msgs = [];
+        while((match = regex.exec(text)) !== null) msgs.push({ time: match[1], user: match[2].trim() });
+        if(!msgs.length) { alert("Format Error"); document.getElementById('loading').style.display='none'; return; }
+        const start = msgs[0].time.split(' ')[0], end = msgs[msgs.length-1].time.split(' ')[0];
+        document.getElementById('date-range').innerText = `LOG: ${start} -> ${end}`;
+        rawMessages = msgs;
+        setTimeout(() => analyzeAndDraw(parseInt(document.getElementById('linkThreshold').value)), 100);
+    }
+
+    function analyzeAndDraw(threshold) {
+        const linkMap = {};
+        rawMessages.forEach((m, i) => {
+            if(i===0) return;
+            const p = rawMessages[i-1].user, c = m.user;
+            if(p!==c) { const k = [p,c].sort().join("|||"); linkMap[k] = (linkMap[k]||0)+1; }
+        });
+
+        let links = Object.keys(linkMap).map(k => {
+            const [s,t] = k.split("|||"); return { source: s, target: t, value: linkMap[k] };
+        }).filter(l => l.value >= threshold);
+        
+        const connected = new Set();
+        links.forEach(l => { connected.add(l.source); connected.add(l.target); });
+
+        let nodes = Array.from(connected).map(u => {
+            const deg = links.filter(l => l.source===u || l.target===u).length;
+            return { id: u, degree: deg, isPlanet: deg >= 8 };
+        });
+
+        if(nodes.length > 20000 && threshold < 5) {
+             document.getElementById('linkThreshold').value = 5;
+             analyzeAndDraw(5); return;
+        }
+
+        currentNodes = nodes;
+        currentLinks = links;
+        document.getElementById('nodeCount').innerText = nodes.length;
+        document.getElementById('linkCount').innerText = links.length;
+        
+        adjacencyList.clear();
+        nodes.forEach(n => adjacencyList.set(n.id, []));
+        links.forEach(l => {
+            const s = (typeof l.source === 'object') ? l.source.id : l.source;
+            const t = (typeof l.target === 'object') ? l.target.id : l.target;
+            if(adjacencyList.has(s)) adjacencyList.get(s).push(t);
+            if(adjacencyList.has(t)) adjacencyList.get(t).push(s);
+        });
+
+        initSimulation(nodes, links);
+    }
+
+    // --- Physics Engine V16 (Silky Smooth) ---
+    function initSimulation(nodes, links) {
+        if(simulation) simulation.stop();
+
+        simulation = d3.forceSimulation(nodes)
+            // 连线力
+            .force("link", d3.forceLink(links).id(d=>d.id).distance(d => d.isPlanet ? 250 : 100))
+            // 斥力
+            .force("charge", d3.forceManyBody().strength(d => d.isPlanet ? -2000 : -300).theta(0.9)) 
+            // 软碰撞: strength 0.5 (不生硬), 迭代 2 次
+            .force("collide", d3.forceCollide().radius(d => getRadius(d) * 2.2).strength(0.5).iterations(2))
+            // 向心力
+            .force("center", d3.forceCenter(width/2, height/2).strength(0.01))
+            // 核心: 高阻尼 (0.9) + 低目标能量 (0.01) = 丝滑不抖动且不暂停
+            .velocityDecay(0.9) 
+            .alphaTarget(0.01)  // 保持微弱动力
+            .alphaDecay(0.02)   // 快速进入稳定态
+            .on("tick", render);
+
+        // Pre-warm
+        for (let i = 0; i < 100; ++i) simulation.tick();
+
+        const dragBehavior = d3.drag()
+            .subject((event) => {
+                const [x, y] = transform.invert(d3.pointer(event, canvas));
+                return simulation.find(x, y, 40 / transform.k);
+            })
+            .on("start", (event) => {
+                // 拖拽时稍微增加一点能量
+                if (!event.active) simulation.alphaTarget(0.1).restart();
+                const [x, y] = transform.invert(d3.pointer(event, canvas));
+                event.subject.fx = x;
+                event.subject.fy = y;
+                isDragging = true;
+            })
+            .on("drag", (event) => {
+                const [x, y] = transform.invert(d3.pointer(event, canvas));
+                event.subject.fx = x;
+                event.subject.fy = y;
+            })
+            .on("end", (event) => {
+                // 结束后回到低能量巡航
+                if (!event.active) simulation.alphaTarget(0.01);
+                event.subject.fx = null;
+                event.subject.fy = null;
+                setTimeout(() => isDragging = false, 50);
+            });
+
+        d3.select(canvas)
+            .call(dragBehavior)
+            .call(d3.zoom()
+                .scaleExtent([0.1, 8])
+                .on("zoom", (e) => { transform = e.transform; render(); })
+            )
+            .on("dblclick.zoom", null)
+            .on("click", (event) => {
+                if(isDragging) return;
+                if(hoveredNode) {
+                    if(selectedNode === hoveredNode) selectedNode = null;
+                    else selectedNode = hoveredNode;
+                } else {
+                    selectedNode = null;
+                }
+                render();
+            })
+            .on("mousemove", (event) => {
+                if(isDragging) return;
+                const [mx, my] = d3.pointer(event);
+                const [gx, gy] = transform.invert([mx, my]);
+                const closest = simulation.find(gx, gy, 40 / transform.k);
+                if(closest !== hoveredNode) {
+                    hoveredNode = closest;
+                }
+            });
+
+        document.getElementById('loading').style.display = 'none';
+    }
+
+    function render() {
+        context.save();
+        context.clearRect(0, 0, width, height);
+        context.translate(transform.x, transform.y);
+        context.scale(transform.k, transform.k);
+
+        const zoomLevel = transform.k;
+        
+        let focusNode = null;
+        if (pathNodes.size > 0) focusNode = "PATH_MODE";
+        else if (selectedNode) focusNode = selectedNode;
+        else if (hoveredNode) focusNode = hoveredNode;
+
+        const isDimmed = (focusNode !== null);
+
+        // 1. Draw Links
+        if (isDimmed) {
+            currentLinks.forEach(l => {
+                let shouldDraw = false;
+                let isPath = false;
+                if (focusNode === "PATH_MODE") {
+                    if (pathLinks.has(l)) { shouldDraw = true; isPath = true; }
+                } else {
+                    if (l.source === focusNode || l.target === focusNode) shouldDraw = true;
+                }
+                if (shouldDraw) {
+                    context.beginPath();
+                    context.moveTo(l.source.x, l.source.y);
+                    context.lineTo(l.target.x, l.target.y);
+                    if (isPath) {
+                        context.strokeStyle = "#ffaa00";
+                        context.lineWidth = 1.5 / zoomLevel;
+                        context.globalAlpha = 1;
+                    } else {
+                        context.strokeStyle = "#00f3ff";
+                        context.lineWidth = 0.5 / zoomLevel;
+                        context.globalAlpha = 0.4;
+                    }
+                    context.stroke();
+                }
+            });
+        }
+
+        // 2. Draw Nodes
+        currentNodes.forEach(d => {
+            const isPath = pathNodes.has(d);
+            const isSelected = (d === selectedNode);
+            const isHovered = (d === hoveredNode);
+            const isNeighbor = focusNode && focusNode !== "PATH_MODE" && adjacencyList.get(focusNode.id).includes(d.id);
+            
+            let alpha = isDimmed ? 0.05 : 1; 
+            if (focusNode === "PATH_MODE") { if (isPath) alpha = 1; } 
+            else if (focusNode) { if (d === focusNode || isNeighbor) alpha = 1; }
+            else { alpha = 1; }
+
+            context.globalAlpha = alpha;
+
+            if (d.isPlanet) {
+                const r = getRadius(d); 
+                context.fillStyle = getColor(d.id);
+                context.beginPath();
+                context.arc(d.x, d.y, r, 0, 2 * Math.PI);
+                context.fill();
+
+                if (alpha > 0.5 && (zoomLevel > 0.5 || isSelected || isHovered)) {
+                    context.beginPath();
+                    context.strokeStyle = (isSelected || isHovered) ? "#fff" : "rgba(255,255,255,0.1)";
+                    context.lineWidth = 0.5 / zoomLevel;
+                    context.arc(d.x, d.y, r + 8, 0, 2 * Math.PI);
+                    context.stroke();
+                }
+            } else {
+                if (zoomLevel > 0.3 || alpha > 0.5) {
+                    context.fillStyle = "#ffd700"; 
+                    const size = 3; 
+                    context.beginPath();
+                    context.moveTo(d.x, d.y - size * 1.5);
+                    context.lineTo(d.x + size, d.y); 
+                    context.lineTo(d.x, d.y + size * 1.5);
+                    context.lineTo(d.x - size, d.y);  
+                    context.closePath();
+                    context.fill();
+                }
+            }
+        });
+
+        // 3. Draw Labels
+        context.globalAlpha = 1;
+        context.textAlign = "center";
+        const fontSize = Math.max(10, 12 / zoomLevel);
+        context.font = `bold ${fontSize}px Rajdhani`;
+
+        currentNodes.forEach(d => {
+            let show = false;
+            let color = "#fff";
+            let glow = false;
+            
+            if (focusNode === "PATH_MODE") {
+                if (pathNodes.has(d)) { show = true; color = "#ffaa00"; }
+            } else if (focusNode) {
+                if (d === focusNode) { show = true; color = "#00f3ff"; glow = true; }
+                else if (adjacencyList.get(focusNode.id).includes(d.id)) { show = true; color = "#fff"; }
+            } else {
+                if (d.degree > 20) { show = true; color = "#00f3ff"; glow = true; } 
+            }
+
+            if (show) {
+                const offset = d.isPlanet ? (getRadius(d) + 12) : 10;
+                
+                if (glow) {
+                    context.shadowColor = color;
+                    context.shadowBlur = 4;
+                } else {
+                    context.shadowBlur = 0;
+                    context.strokeStyle = "#000";
+                    context.lineWidth = 2 / zoomLevel;
+                    context.strokeText(d.id, d.x, d.y + offset);
+                }
+                
+                context.fillStyle = color;
+                context.fillText(d.id, d.x, d.y + offset);
+                context.shadowBlur = 0;
+            }
+        });
+
+        context.restore();
+    }
+
+    function findPath(startId, endId) {
+        const s = currentNodes.find(n => n.id.toLowerCase() === startId.toLowerCase());
+        const e = currentNodes.find(n => n.id.toLowerCase() === endId.toLowerCase());
+        if (!s || !e) return null;
+        const queue = [[s.id]];
+        const visited = new Set([s.id]);
+        while (queue.length) {
+            const path = queue.shift();
+            const curr = path[path.length - 1];
+            if (curr === e.id) return path;
+            const neighbors = adjacencyList.get(curr) || [];
+            for (const n of neighbors) {
+                if (!visited.has(n)) {
+                    visited.add(n);
+                    queue.push([...path, n]);
+                }
+            }
+        }
+        return null;
+    }
+
+    document.getElementById('pathBtn').onclick = () => {
+        pathNodes.clear(); pathLinks.clear(); selectedNode = null; hoveredNode = null;
+        const start = document.getElementById('pathStart').value.trim();
+        const end = document.getElementById('pathEnd').value.trim();
+        const msg = document.getElementById('pathMsg');
+        if(!start || !end) return;
+        const path = findPath(start, end);
+        if(path) {
+            msg.innerText = TRANSLATIONS[curLang].pathFound.replace('$', path.length-1);
+            path.forEach(id => {
+                const n = currentNodes.find(node => node.id === id);
+                if(n) pathNodes.add(n);
+            });
+            currentLinks.forEach(l => {
+                const s = l.source.id, t = l.target.id;
+                const sIdx = path.indexOf(s), tIdx = path.indexOf(t);
+                if(sIdx !== -1 && tIdx !== -1 && Math.abs(sIdx - tIdx) === 1) pathLinks.add(l);
+            });
+            const nodesArr = Array.from(pathNodes);
+            const cx = d3.mean(nodesArr, d => d.x);
+            const cy = d3.mean(nodesArr, d => d.y);
+            svg.transition().duration(1200).call(d3.zoom().transform, d3.zoomIdentity.translate(width/2, height/2).scale(0.6).translate(-cx, -cy));
+        } else { msg.innerText = TRANSLATIONS[curLang].pathFail; }
+        render(); // Force update
+    };
+
+    document.getElementById('searchBtn').onclick = () => {
+        const q = document.getElementById('searchInput').value.trim().toLowerCase();
+        const target = currentNodes.find(n => n.id.toLowerCase().includes(q));
+        if(target) {
+            document.getElementById('searchMsg').innerText = "";
+            selectedNode = target;
+            pathNodes.clear(); pathLinks.clear();
+            svg.transition().duration(1200).call(d3.zoom().transform, d3.zoomIdentity.translate(width/2, height/2).scale(1.5).translate(-target.x, -target.y));
+            render();
+        } else {
+            document.getElementById('searchMsg').innerText = TRANSLATIONS[curLang].notFound;
+        }
+    };
+</script>
+</body>
+</html>
